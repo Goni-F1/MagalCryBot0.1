@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 
 TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY")
 SYMBOL = "EUR/USD"
-INTERVAL = "3min"
+INTERVAL = "5min"
 OUTPUTSIZE = 80
-TRADE_DURATION_MINUTES = 3
+TRADE_DURATION_MINUTES = 5
 
 
 def fetch_ohlcv():
@@ -136,7 +136,7 @@ def analyze_signal():
                 f"━━━━━━━━━━━━━━━━\n"
                 f"💱 Entry: `{price:.5f}`\n"
                 f"⏱ Open at: *{entry_time} UTC*\n"
-                f"🔒 Expiry: *{expiry_time} UTC* (3 min)\n"
+                f"🔒 Expiry: *{expiry_time} UTC* (5 min)\n"
                 f"📶 Strength: {score}/4 indicators\n"
                 f"━━━━━━━━━━━━━━━━\n"
                 f"✅ Open a *BUY* trade on ExpertOption now"
@@ -147,7 +147,7 @@ def analyze_signal():
                 f"━━━━━━━━━━━━━━━━\n"
                 f"💱 Entry: `{price:.5f}`\n"
                 f"⏱ Open at: *{entry_time} UTC*\n"
-                f"🔒 Expiry: *{expiry_time} UTC* (3 min)\n"
+                f"🔒 Expiry: *{expiry_time} UTC* (5 min)\n"
                 f"📶 Strength: {score}/4 indicators\n"
                 f"━━━━━━━━━━━━━━━━\n"
                 f"✅ Open a *SELL* trade on ExpertOption now"
