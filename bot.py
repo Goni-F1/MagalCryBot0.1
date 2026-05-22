@@ -17,7 +17,7 @@ last_signal = {"direction": None}
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 *EUR/USD 3-Min Signal Bot*\n\n"
-        "I send BUY ⬆️ or SELL ⬇️ signals every 3 minutes.\n"
+        "I send BUY ⬆️ or SELL ⬇️ signals every 5 minutes.\n"
         "Each signal includes an exact expiry time.\n\n"
         "Indicators used:\n"
         "• RSI (7)\n"
@@ -43,7 +43,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Bot running\n"
         f"📊 Pair: EUR/USD\n"
-        f"⏱ Interval: every 3 minutes\n"
+        f"⏱ Interval: every 5 minutes\n"
         f"📡 Last signal: {last_signal['direction'] or 'None yet'}"
     )
 
@@ -75,12 +75,12 @@ def main():
     scheduler.add_job(
         scheduled_check,
         "interval",
-        minutes=3,
+        minutes=5,
         args=[app]
     )
     scheduler.start()
 
-    logger.info("Bot started — checking EUR/USD every 3 minutes.")
+    logger.info("Bot started — checking EUR/USD every 5 minutes.")
     app.run_polling()
 
 
