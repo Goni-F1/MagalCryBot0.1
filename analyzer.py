@@ -1,13 +1,14 @@
 import os
 import requests
 import pandas as pd
-import pandas_ta as ta
+import numpy as np
+import ta
 from datetime import datetime, timedelta
 
 TWELVE_DATA_KEY = os.environ.get("TWELVE_DATA_KEY")
 SYMBOL = "EUR/USD"
 INTERVAL = "3min"
-OUTPUTSIZE = 80  # enough for all indicators on 3m candles
+OUTPUTSIZE = 80
 TRADE_DURATION_MINUTES = 3
 
 
@@ -29,8 +30,8 @@ def fetch_ohlcv():
 
     df = pd.DataFrame(data["values"])
     df = df.rename(columns={
-        "open": "Open", "high": "High", "low": "Low",
-        "close": "Close", "volume": "Volume"
+        "open": "Open", "high": "High",
+        "low": "Low", "close": "Close"
     })
     for col in ["Open", "High", "Low", "Close"]:
         df[col] = df[col].astype(float)
@@ -39,38 +40,40 @@ def fetch_ohlcv():
 
 
 def compute_indicators(df):
-    """Compute RSI, MACD, EMA, SMA, Bollinger Bands tuned for 3m scalping."""
+    """Compute RSI, MACD, EMA, Bollinger Bands using 'ta' library."""
     close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
 
-    # RSI (7) — faster for short-term
-    df["RSI"] = ta.rsi(close, length=7)
+    # RSI (7) — fast for 3m scalping
+    df["RSI"] = ta.momentum.RSIIndicator(close, window=7).rsi()
 
-    # MACD (5, 13, 4) — tighter settings for 3m
-    macd = ta.macd(close, fast=5, slow=13, signal=4)
-    df["MACD"] = macd["MACD_5_13_4"]
-    df["MACD_signal"] = macd["MACDs_5_13_4"]
-    df["MACD_hist"] = macd["MACDh_5_13_4"]
+    # MACD (5, 13, 4)
+    macd_ind = ta.trend.MACD(close, window_fast=5, window_slow=13, window_sign=4)
+    df["MACD"] = macd_ind.macd()
+    df["MACD_signal"] = macd_ind.macd_signal()
+    df["MACD_hist"] = macd_ind.macd_diff()
 
-    # EMA 9 & EMA 21 (fast MAs for scalping)
-    df["EMA9"] = ta.ema(close, length=9)
-    df["EMA21"] = ta.ema(close, length=21)
+    # EMA 9 and EMA 21
+    df["EMA9"] = ta.trend.EMAIndicator(close, window=9).ema_indicator()
+    df["EMA21"] = ta.trend.EMAIndicator(close, window=21).ema_indicator()
 
-    # Bollinger Bands (10, 2) — shorter window for 3m
-    bb = ta.bbands(close, length=10, std=2)
-    df["BB_upper"] = bb["BBU_10_2.0"]
-    df["BB_lower"] = bb["BBL_10_2.0"]
-    df["BB_mid"] = bb["BBM_10_2.0"]
+    # Bollinger Bands (10, 2)
+    bb = ta.volatility.BollingerBands(close, window=10, window_dev=2)
+    df["BB_upper"] = bb.bollinger_hband()
+    df["BB_lower"] = bb.bollinger_lband()
+    df["BB_mid"] = bb.bollinger_mavg()
 
     return df
 
 
 def evaluate_signals(df):
-    """Vote across indicators, return direction and score."""
+    """Vote across 4 indicators for BUY / SELL / WAIT."""
     row = df.iloc[-1]
     prev = df.iloc[-2]
     votes = []
 
-    # --- RSI (7) ---
+    # --- RSI ---
     rsi = row["RSI"]
     if rsi < 40:
         votes.append("BUY")
@@ -80,26 +83,18 @@ def evaluate_signals(df):
         votes.append("NEUTRAL")
 
     # --- MACD histogram momentum ---
-    # Rising histogram = building bullish momentum
-    hist_now = row["MACD_hist"]
-    hist_prev = prev["MACD_hist"]
-    macd_bull = row["MACD"] > row["MACD_signal"]
-    macd_bear = row["MACD"] < row["MACD_signal"]
-
-    if macd_bull and hist_now > hist_prev:
+    if row["MACD"] > row["MACD_signal"] and row["MACD_hist"] > prev["MACD_hist"]:
         votes.append("BUY")
-    elif macd_bear and hist_now < hist_prev:
+    elif row["MACD"] < row["MACD_signal"] and row["MACD_hist"] < prev["MACD_hist"]:
         votes.append("SELL")
     else:
         votes.append("NEUTRAL")
 
     # --- EMA9 vs EMA21 ---
     price = row["Close"]
-    ema9 = row["EMA9"]
-    ema21 = row["EMA21"]
-    if price > ema9 and ema9 > ema21:
+    if price > row["EMA9"] and row["EMA9"] > row["EMA21"]:
         votes.append("BUY")
-    elif price < ema9 and ema9 < ema21:
+    elif price < row["EMA9"] and row["EMA9"] < row["EMA21"]:
         votes.append("SELL")
     else:
         votes.append("NEUTRAL")
@@ -110,30 +105,21 @@ def evaluate_signals(df):
     elif price >= row["BB_upper"]:
         votes.append("SELL")
     else:
-        # Price position relative to midline as a tiebreaker
-        if price > row["BB_mid"]:
-            votes.append("BUY")
-        else:
-            votes.append("SELL")
+        votes.append("BUY" if price > row["BB_mid"] else "SELL")
 
     buy_count = votes.count("BUY")
     sell_count = votes.count("SELL")
 
     if buy_count >= 3:
-        direction = "BUY"
-        score = buy_count
+        return "BUY", buy_count, price
     elif sell_count >= 3:
-        direction = "SELL"
-        score = sell_count
+        return "SELL", sell_count, price
     else:
-        direction = "WAIT"
-        score = 0
-
-    return direction, score, price
+        return "WAIT", 0, price
 
 
 def analyze_signal():
-    """Fetch, compute, evaluate — return a clean 3-minute signal message."""
+    """Main entry point — returns (message, direction)."""
     try:
         df = fetch_ohlcv()
         df = compute_indicators(df)
@@ -141,7 +127,6 @@ def analyze_signal():
 
         now_utc = datetime.utcnow()
         expiry_utc = now_utc + timedelta(minutes=TRADE_DURATION_MINUTES)
-
         entry_time = now_utc.strftime("%H:%M")
         expiry_time = expiry_utc.strftime("%H:%M")
 
